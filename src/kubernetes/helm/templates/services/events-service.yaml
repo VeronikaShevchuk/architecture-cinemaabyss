@@ -1,23 +1,15 @@
-{{- if .Values.eventsService.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: events-service
-  namespace: {{ .Values.global.namespace }}
+  namespace: cinemaabyss
   labels:
     app: events-service
-    app.kubernetes.io/name: {{ include "cinemaabyss.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  replicas: {{ .Values.eventsService.replicas }}
+  replicas: 1
   selector:
     matchLabels:
       app: events-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -25,17 +17,44 @@ spec:
     spec:
       containers:
       - name: events-service
-       .... тут
+        image: your-registry/events-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DB_CONNECTION_STRING
+          value: "postgres://user:pass@postgres:5432/cinemaabyss?sslmode=disable"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        readinessProbe:
+          httpGet:
+            path: /api/events/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/events/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      imagePullSecrets:
+      - name: dockerconfigjson
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: events-service
-  namespace: {{ .Values.global.namespace }}
-  labels:
-    app: events-service
-    app.kubernetes.io/name: {{ include "cinemaabyss.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+  namespace: cinemaabyss
 spec:
- ........ и тут
-{{- end }}
+  selector:
+    app: events-service
+  ports:
+  - port: 80
+    targetPort: 8080

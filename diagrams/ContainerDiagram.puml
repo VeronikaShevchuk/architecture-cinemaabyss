@@ -1,0 +1,88 @@
+@startuml Containerdiagram
+!include diagrams-templates\C4_Container.puml
+!include diagrams-templates\C4_Context.puml
+
+title Диаграмма контейнеров - "Кинобездна" (To-Be архитектура)
+
+Person(user, "Пользователь", "Смотрит фильмы через различные устройства: Web, Mobile, Smart TV")
+
+System_Boundary(kinobezdna, "Онлайн-кинотеатр Кинобездна") {
+    Container(api_gateway, "API Gateway", "Nginx/Kong", "Единая точка входа, маршрутизация, аутентификация, агрегация данных")
+    
+    Container(auth_service, "Auth Service", "Go", "Управление аутентификацией и авторизацией\nREST API")
+    Container(user_service, "User Profile Service", "Go", "Управление профилями пользователей и избранным\nREST API")
+    Container(metadata_service, "Metadata Service", "Go", "Управление метаданными о фильмах (MVP)\nREST API")
+    Container(billing_service, "Billing Service", "Go", "Управление подписками, скидками и платежами\nREST API")
+    Container(content_service, "Content Delivery Service", "Go", "Стриминг видео-контента\nREST API")
+    
+    ContainerDb(auth_db, "Auth Database", "PostgreSQL", "Хранит учетные данные пользователей")
+    ContainerDb(user_db, "User Database", "PostgreSQL", "Хранит профили и избранное пользователей")
+    ContainerDb(metadata_db, "Metadata Database", "PostgreSQL", "Хранит метаданные о фильмах")
+    ContainerDb(billing_db, "Billing Database", "PostgreSQL", "Хранит информацию о подписках и платежах")
+    
+    ContainerQueue(message_broker, "Message Broker", "Apache Kafka", "Асинхронная коммуникация между сервисами")
+    Container(cache, "Cache", "Redis", "Кэширование сессий и часто запрашиваемых данных")
+}
+
+System_Ext(recommendation_system, "Recommendation System", "Внешняя рекомендательная система")
+System_Ext(payment_gateway, "Payment Gateway", "Сторонняя платежная система")
+System_Ext(cdn, "CDN", "Content Delivery Network")
+System_Ext(storage, "Object Storage", "S3-совместимое хранилище")
+
+' Connections from user
+Rel(user, api_gateway, "HTTPS/REST API", "JSON")
+
+' Connections from API Gateway to services - ИЗМЕНЕНО НА REST API
+Rel(api_gateway, auth_service, "REST API", "JSON (JWT tokens, auth)")
+Rel(api_gateway, user_service, "REST API", "JSON (profiles, favorites)")
+Rel(api_gateway, metadata_service, "REST API", "JSON (movies, genres, actors)")
+Rel(api_gateway, billing_service, "REST API", "JSON (subscriptions, payments)")
+Rel(api_gateway, content_service, "REST API", "JSON (streaming URLs, progress)")
+Rel(api_gateway, cache, "Redis protocol", "Кэш запросов")
+
+' Database connections
+Rel(auth_service, auth_db, "Чтение/запись", "SQL")
+Rel(user_service, user_db, "Чтение/запись", "SQL")
+Rel(metadata_service, metadata_db, "Чтение/запись", "SQL")
+Rel(billing_service, billing_db, "Чтение/запись", "SQL")
+
+' Cache connections
+Rel(auth_service, cache, "Redis protocol", "Сессии пользователей")
+Rel(api_gateway, cache, "Redis protocol", "Кэш метаданных")
+
+' Kafka event flows
+Rel(user_service, message_broker, "Отправляет события", "user.registered, user.updated (Kafka)")
+Rel(content_service, message_broker, "Отправляет события", "user.watched, content.played (Kafka)")
+Rel(metadata_service, message_broker, "Отправляет события", "metadata.updated (Kafka)")
+
+Rel(message_broker, recommendation_system, "Передает события", "user.watched, user.rated (Kafka)")
+Rel(recommendation_system, api_gateway, "REST API", "Получение рекомендаций (JSON)")
+
+' External systems connections
+Rel(billing_service, payment_gateway, "REST API", "Обработка платежей")
+Rel(content_service, storage, "S3 API", "Получение видео-файлов")
+Rel(content_service, cdn, "CDN API", "Раздача контента через CDN")
+Rel(api_gateway, cdn, "HTTPS", "Статические assets (постеры, трейлеры)")
+
+' Internal service communications - ТОЖЕ МОЖЕТ БЫТЬ REST API
+Rel(billing_service, auth_service, "REST API", "Валидация прав доступа")
+Rel(user_service, auth_service, "REST API", "Валидация пользователя")
+
+' Event consumption for internal services
+Rel(message_broker, billing_service, "Получает события", "user.registered (для пробной подписки)")
+Rel(message_broker, user_service, "Получает события", "user.registered (создание профиля)")
+
+note right of api_gateway
+  <b>REST API между сервисами</b>
+  - Проще для разработки
+  - Легче дебажить
+  - Постепенная миграция
+  - В будущем можно добавить gRPC
+end note
+
+note right of metadata_service
+  <b>Продолжаем использовать GO</b>
+  - Проще для разработки и перехода
+ end note
+
+@enduml
